@@ -3,7 +3,6 @@ const logEl = document.getElementById("log");
 const startBtn = document.getElementById("start");
 const stopBtn = document.getElementById("stop");
 const muteBtn = document.getElementById("mute");
-const interruptBtn = document.getElementById("interrupt");
 const agentAudio = document.getElementById("agentAudio");
 
 // Global Variables
@@ -152,7 +151,6 @@ startBtn.onclick = async () => {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     muteBtn.disabled = false;
-    interruptBtn.disabled = false;
     log("🎉 Ready!");
   } catch (e) {
     log("❌ Failed: " + e.message);
@@ -167,7 +165,6 @@ stopBtn.onclick = () => {
   startBtn.disabled = false;
   stopBtn.disabled = true;
   muteBtn.disabled = true;
-  interruptBtn.disabled = true;
   log("Disconnected");
 };
 
@@ -182,16 +179,5 @@ muteBtn.onclick = () => {
       muteBtn.textContent = isMuted ? "Unmute Mic" : "Mute Mic";
       log(isMuted ? "🔇 Microphone muted" : "🎤 Microphone unmuted");
     }
-  }
-};
-
-// Interrupt AI button functionality
-interruptBtn.onclick = () => {
-  if (dc && dc.readyState === "open") {
-    const interruptMessage = {
-      type: "conversation.interrupt",
-    };
-    dc.send(JSON.stringify(interruptMessage));
-    log("⏹️ Interrupted AI response");
   }
 };
