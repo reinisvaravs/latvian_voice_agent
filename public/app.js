@@ -39,7 +39,7 @@ startBtn.onclick = async () => {
 
     // Create data channel for events
     dc = pc.createDataChannel("events");
-    dc.onopen = () => {
+    dc.on = () => {
       log("✅ Connected");
 
       // Send basic session config
@@ -70,20 +70,8 @@ startBtn.onclick = async () => {
         const data = JSON.parse(evt.data);
         log(`📡 ${data.type}`);
 
-        if (data.type === "response.text") {
-          if (data.response && data.response.text) {
-            log("💬 AI: " + data.response.text);
-          } else if (data.text) {
-            log("💬 AI: " + data.text);
-          }
-        } else if (data.type === "response.audio") {
-          log("🔊 AI speaking");
-        } else if (data.type === "turn.end") {
-          log("⏹️ AI finished");
-        } else if (data.type === "response.end") {
-          log("✅ Response complete");
-        } else if (data.type === "session.updated") {
-          log("📋 Session updated successfully");
+        if (data.type === "session.created") {
+          log("📋 Session created successfully");
           console.log("Session data:", data);
           // Now send the message after session is confirmed
           setTimeout(() => {
@@ -100,30 +88,10 @@ startBtn.onclick = async () => {
             dc.send(JSON.stringify(message));
             log("👤 Sent: Sveiki");
           }, 500);
-        } else if (data.type === "response.created") {
-          log("🚀 AI response started");
-        } else if (data.type === "response.done") {
-          log("✅ AI response completed");
-        } else if (data.type === "error") {
+        }
+        if (data.type === "error") {
           if (data.error && data.error.message) {
             log("❌ Error: " + data.error.message);
-          }
-        } else if (
-          data.type === "session.created" ||
-          data.type === "conversation.item.created" ||
-          data.type === "input_audio_buffer.speech_started" ||
-          data.type === "input_audio_buffer.speech_ended"
-        ) {
-          // Silent handling of common events
-        } else {
-          // Only log truly unknown events
-          if (
-            !data.type.includes("input_audio_buffer") &&
-            !data.type.includes("session") &&
-            !data.type.includes("conversation") &&
-            !data.type.includes("response")
-          ) {
-            log(`❓ Unknown event: ${data.type}`);
           }
         }
       } catch (e) {
