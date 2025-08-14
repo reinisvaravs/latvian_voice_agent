@@ -53,7 +53,7 @@ startBtn.onclick = async () => {
             create_response: true,
             silence_duration_ms: 1000,
           },
-          voice: "echo",
+          voice: "alloy",
           speed: 1.1,
         },
       };
@@ -80,7 +80,12 @@ startBtn.onclick = async () => {
               item: {
                 type: "message",
                 role: "user",
-                content: [{ type: "input_text", text: "Sveiki" }],
+                content: [
+                  {
+                    type: "input_text",
+                    text: "Sveiki. Es runāšu latviešu valodā.",
+                  },
+                ],
               },
             };
             log("📤 Sending message...");
