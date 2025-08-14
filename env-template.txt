@@ -1,11 +1,9 @@
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key_here
+# Claude API Configuration (Anthropic)
+CLAUDE_API_KEY=your_claude_api_key_here
 
-# OpenAI Realtime Model (optional - defaults to gpt-4o-mini for cost savings)
-OPENAI_REALTIME_MODEL=gpt-4o-mini
-
-# OpenAI TTS Voice (optional - defaults to alloy)
-OPENAI_TTS_VOICE=alloy
+# Azure Speech Service Configuration
+AZURE_SPEECH_KEY=your_azure_speech_key_here
+AZURE_SPEECH_REGION=your_azure_region_here
 
 # Server Port (optional - defaults to 3000)
 PORT=3000 

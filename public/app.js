@@ -3,10 +3,11 @@ const logEl = document.getElementById("log");
 const startBtn = document.getElementById("start");
 const stopBtn = document.getElementById("stop");
 const muteBtn = document.getElementById("mute");
-const agentAudio = document.getElementById("agentAudio");
 
 // Global Variables
-let pc, micStream, dc;
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
 
 // Utility Functions
 function log(msg) {
@@ -21,131 +22,103 @@ function log(msg) {
 // Event Handlers
 startBtn.onclick = async () => {
   try {
-    // Get microphone access
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1 },
+    log("🎤 Starting recording...");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: false, // Disable echo cancellation for better quality
+        noiseSuppression: false, // Disable noise suppression for better quality
+        autoGainControl: true, // Enable auto gain control
+        volume: 1.0, // Maximum volume
+      },
     });
 
-    // Create WebRTC connection
-    pc = new RTCPeerConnection();
-    const track = micStream.getAudioTracks()[0];
-    pc.addTrack(track, micStream);
+    // Add audio level monitoring
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    source.connect(analyser);
 
-    // Handle incoming audio
-    pc.ontrack = (e) => {
-      agentAudio.srcObject = e.streams[0];
-      log("🔊 Audio connected");
-    };
+    // Monitor audio levels
+    const checkAudioLevel = () => {
+      if (isRecording) {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
 
-    // Create data channel for events
-    dc = pc.createDataChannel("events");
-    dc.on = () => {
-      log("✅ Connected");
-
-      // Send basic session config
-      const sessionConfig = {
-        type: "session.update",
-        session: {
-          instructions:
-            "You are a real human working at Limbažu gāze customer service. You MUST respond ONLY in Latvian language. Your main goal is ALWAYS to ask customers for their gas meter counter numbers. Talk exactly like a real person would - use natural, conversational Latvian with common filler words like 'super', 'labi', 'okei', 'nu', 'tad', 'vai', 'jā', 'nē', 'tā', 'tāds', 'tāda', 'tāpat', 'protams', 'noteikti', 'pārliecināti', 'saprotu', 'skaidrs', 'tiešām', 'patiešām', 'vispār', 'vispārīgi'. Be warm, friendly, and professional. When customers call, focus on getting their gas meter counter numbers. Only help them find their gas counter location if they specifically ask where it is - then explain it's usually in the basement, kitchen, or utility room, often near the boiler or water heater. Don't offer location help unless asked. Use everyday Latvian expressions and sound like someone who actually works there. Be helpful but keep it human and natural. IMPORTANT: Respond ONLY in Latvian, never in English. Sound 100% like a real human, not an AI. Always focus on getting the gas meter counter numbers.",
-          turn_detection: {
-            type: "server_vad",
-            create_response: true,
-            silence_duration_ms: 1000,
-          },
-          voice: "alloy",
-          speed: 1.1,
-        },
-      };
-
-      log("📤 Sending session config...");
-      console.log("Session config:", sessionConfig);
-      dc.send(JSON.stringify(sessionConfig));
-      log("⚙️ Session configured");
-    };
-
-    // Handle incoming messages
-    dc.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        log(`📡 ${data.type}`);
-
-        if (data.type === "session.created") {
-          log("📋 Session created successfully");
-          console.log("Session data:", data);
-          // Now send the message after session is confirmed
-          setTimeout(() => {
-            const message = {
-              type: "conversation.item.create",
-              item: {
-                type: "message",
-                role: "user",
-                content: [
-                  {
-                    type: "input_text",
-                    text: "Sveiki. Es runāšu latviešu valodā.",
-                  },
-                ],
-              },
-            };
-            log("📤 Sending message...");
-            console.log("Message:", message);
-            dc.send(JSON.stringify(message));
-            log("👤 Sent: Sveiki");
-          }, 500);
+        if (average > 10) {
+          log("🔊 Audio detected - speaking detected");
         }
-        if (data.type === "error") {
-          if (data.error && data.error.message) {
-            log("❌ Error: " + data.error.message);
-          }
-        }
-      } catch (e) {
-        log("❌ Parse error: " + e.message);
+
+        setTimeout(checkAudioLevel, 1000);
       }
     };
+    checkAudioLevel();
 
-    // Create and send offer
-    const offer = await pc.createOffer({ offerToReceiveAudio: true });
-    await pc.setLocalDescription(offer);
-
-    const resp = await fetch("/realtime/sdp", {
-      method: "POST",
-      headers: { "Content-Type": "application/sdp" },
-      body: offer.sdp,
-    });
-
-    if (!resp.ok) {
-      throw new Error("Failed to connect: " + (await resp.text()));
+    // Try different audio formats for better Azure compatibility
+    let mimeType = "audio/wav";
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = "audio/webm;codecs=opus";
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = "audio/webm";
+      }
     }
 
-    const answerSdp = await resp.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    log("🎵 Using audio format: " + mimeType);
+
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: mimeType,
+      audioBitsPerSecond: 128000, // Higher bitrate for better quality
+    });
+    isRecording = true;
+
+    mediaRecorder.ondataavailable = (event) => {
+      audioChunks.push(event.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      log("⏹️ Recording stopped, processing...");
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      await processAudio(audioBlob);
+      audioChunks = [];
+    };
+
+    mediaRecorder.start();
+    log("🎤 Started recording");
+    log("💡 Speak clearly and loudly for best recognition!");
+    log("🔊 Audio monitoring active - speak to see audio levels");
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
     muteBtn.disabled = false;
-    log("🎉 Ready!");
   } catch (e) {
-    log("❌ Failed: " + e.message);
+    log("❌ Failed to start: " + e.message);
   }
 };
 
 stopBtn.onclick = () => {
-  if (dc) dc.close();
-  if (pc) pc.close();
-  if (micStream) micStream.getTracks().forEach((t) => t.stop());
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
 
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  muteBtn.disabled = true;
-  log("Disconnected");
+    if (mediaRecorder.stream) {
+      mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+    }
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    muteBtn.disabled = true;
+    log("⏹️ Stopped recording");
+  }
 };
 
 // Mute button functionality
 let isMuted = false;
 muteBtn.onclick = () => {
-  if (micStream) {
-    const audioTrack = micStream.getAudioTracks()[0];
+  if (mediaRecorder && mediaRecorder.stream) {
+    const audioTrack = mediaRecorder.stream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       isMuted = !isMuted;
@@ -154,3 +127,60 @@ muteBtn.onclick = () => {
     }
   }
 };
+
+// Process audio and get response
+async function processAudio(audioBlob) {
+  try {
+    log("🔄 Processing audio...");
+    log("📊 Audio blob size: " + audioBlob.size + " bytes");
+
+    // Convert audio to base64
+    log("🔄 Converting to base64...");
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const base64Audio = btoa(
+      String.fromCharCode(...new Uint8Array(arrayBuffer))
+    );
+    log("✅ Base64 conversion complete");
+
+    log("📤 Sending to server...");
+
+    // Send to server for processing
+    const response = await fetch("/process-audio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio: base64Audio }),
+    });
+
+    log("📥 Response received: " + response.status);
+
+    if (!response.ok) {
+      throw new Error("Failed to process audio: " + response.status);
+    }
+
+    const result = await response.json();
+    log("📥 JSON parsed successfully");
+
+    if (result.userMessage) {
+      log("👤 You said: " + result.userMessage);
+    }
+
+    if (result.text) {
+      log("💬 AI: " + result.text);
+    }
+
+    if (result.audio) {
+      log("🔊 Playing audio response...");
+      const audio = new Audio("data:audio/mp3;base64," + result.audio);
+      audio.onerror = (e) => log("❌ Audio playback error: " + e.message);
+      audio.onplay = () => log("🔊 Playing AI response");
+      audio.play();
+    } else {
+      log("⚠️ No audio received from server");
+    }
+
+    log("✅ Audio processing complete");
+  } catch (e) {
+    log("❌ Error processing audio: " + e.message);
+    console.error("Full error:", e);
+  }
+}

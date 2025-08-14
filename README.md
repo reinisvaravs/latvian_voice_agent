@@ -1,59 +1,58 @@
-# LV Voice Agent MVP
+# LV Voice Agent MVP - Claude + ElevenLabs
 
-A Latvian language voice agent built with OpenAI's Realtime API.
+Simple Latvian voice agent using Claude for text generation and ElevenLabs for voice synthesis.
 
 ## Setup
 
-1. **Install dependencies:**
+1. **Get API Keys:**
+
+   - [Claude API Key](https://console.anthropic.com/) (Anthropic)
+   - [ElevenLabs API Key](https://elevenlabs.io/) (ElevenLabs)
+
+2. **Configure Environment:**
+
+   ```bash
+   cp env-template.txt .env
+   # Edit .env and add your API keys
+   ```
+
+3. **Install & Run:**
 
    ```bash
    npm install
-   ```
-
-2. **Configure environment variables:**
-
-   - Copy `env-template.txt` to `.env`
-   - Add your OpenAI API key to `OPENAI_API_KEY`
-   - Optionally customize other settings
-
-3. **Start the server:**
-
-   ```bash
    npm start
-   # or for development with auto-reload:
-   npm run dev
    ```
 
-4. **Open your browser:**
+4. **Open Browser:**
    Navigate to `http://localhost:3000`
 
-## Requirements
+## How It Works
 
-- OpenAI API key with access to Realtime API
-- Modern browser with WebRTC support
-- Microphone access
-
-## Troubleshooting
-
-### "Unknown event" errors
-
-The app now properly handles `response.created` and `response.done` events. If you still see unknown events, check the browser console for full event data.
-
-### Connection issues
-
-- Ensure your `.env` file has a valid `OPENAI_API_KEY`
-- Check that the OpenAI Realtime API is available in your account
-- Verify microphone permissions in your browser
-
-### Audio issues
-
-- Check browser console for WebRTC errors
-- Ensure microphone is not being used by other applications
-- Try refreshing the page and granting microphone permissions again
+1. **Click "Start Agent"** - Starts recording
+2. **Speak in Latvian** - Your voice is recorded
+3. **Click "Stop"** - Audio is processed
+4. **Claude generates text** - Best Latvian responses
+5. **ElevenLabs creates voice** - Excellent pronunciation
+6. **Audio plays back** - Instant response
 
 ## Features
 
-- Real-time voice conversation in Latvian
-- Automatic turn detection
-- Configurable AI personality and settings
-- WebRTC-based audio streaming
+- ✅ **Best Latvian text** (Claude 3.5 Sonnet)
+- ✅ **Best Latvian voice** (ElevenLabs multilingual)
+- ✅ **Simple recording** (no WebRTC complexity)
+- ✅ **Instant responses** (streaming audio)
+- ✅ **Mute functionality** (control your microphone)
+
+## API Keys Required
+
+- **CLAUDE_API_KEY**: Anthropic Claude API access
+- **ELEVENLABS_API_KEY**: ElevenLabs voice synthesis
+
+## Simple MVP
+
+This is a minimal working version focused on:
+
+- Getting it working quickly
+- Best possible Latvian quality
+- Simple, reliable code
+- No unnecessary features
