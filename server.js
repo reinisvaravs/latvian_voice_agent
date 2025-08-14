@@ -30,8 +30,7 @@ app.post(
         return res.status(400).send("Invalid SDP offer");
       }
 
-      const model =
-        process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview-2024-10";
+      const model = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-mini";
       const voice = process.env.OPENAI_TTS_VOICE || "alloy";
 
       const r = await fetch(
