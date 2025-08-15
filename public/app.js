@@ -8,6 +8,8 @@ const muteBtn = document.getElementById("mute");
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
+let recordingTimer = null;
+let recordingStartTime = null;
 
 // Utility Functions
 function log(msg) {
@@ -28,9 +30,9 @@ startBtn.onclick = async () => {
       audio: {
         sampleRate: 16000,
         channelCount: 1,
-        echoCancellation: false, // Disable echo cancellation for better quality
-        noiseSuppression: false, // Disable noise suppression for better quality
-        autoGainControl: true, // Enable auto gain control
+        echoCancellation: true, // Enable for better quality
+        noiseSuppression: true, // Enable for better quality
+        autoGainControl: true, // Keep enabled
         volume: 1.0, // Maximum volume
       },
     });
@@ -57,12 +59,12 @@ startBtn.onclick = async () => {
     };
     checkAudioLevel();
 
-    // Try different audio formats for better Azure compatibility
-    let mimeType = "audio/wav";
+    // Use proper audio format for Azure compatibility
+    let mimeType = "audio/webm;codecs=opus"; // Best for Azure
     if (!MediaRecorder.isTypeSupported(mimeType)) {
-      mimeType = "audio/webm;codecs=opus";
+      mimeType = "audio/webm";
       if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = "audio/webm";
+        mimeType = "audio/mp4";
       }
     }
 
@@ -80,15 +82,45 @@ startBtn.onclick = async () => {
 
     mediaRecorder.onstop = async () => {
       log("⏹️ Recording stopped, processing...");
+
+      // Check recording duration
+      const recordingDuration =
+        audioChunks.length > 0
+          ? (audioChunks.reduce((total, chunk) => total + chunk.size, 0) /
+              128000) *
+            8
+          : 0;
+
+      if (recordingDuration < 1.5) {
+        log(
+          "⚠️ Recording too short (" +
+            recordingDuration.toFixed(1) +
+            "s). Please record at least 2 seconds."
+        );
+        audioChunks = [];
+        return;
+      }
+
       const audioBlob = new Blob(audioChunks, { type: mimeType });
       await processAudio(audioBlob);
       audioChunks = [];
     };
 
     mediaRecorder.start();
+    recordingStartTime = Date.now();
+
+    // Start recording timer
+    recordingTimer = setInterval(() => {
+      if (isRecording) {
+        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+        log(`⏱️ Recording: ${elapsed}s (speak clearly!)`);
+      }
+    }, 1000);
+
     log("🎤 Started recording");
     log("💡 Speak clearly and loudly for best recognition!");
     log("🔊 Audio monitoring active - speak to see audio levels");
+    log("⏱️ Record at least 2 seconds for best results");
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -102,6 +134,12 @@ stopBtn.onclick = () => {
   if (mediaRecorder && isRecording) {
     mediaRecorder.stop();
     isRecording = false;
+
+    // Clear recording timer
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
 
     if (mediaRecorder.stream) {
       mediaRecorder.stream.getTracks().forEach((track) => track.stop());
@@ -134,12 +172,12 @@ async function processAudio(audioBlob) {
     log("🔄 Processing audio...");
     log("📊 Audio blob size: " + audioBlob.size + " bytes");
 
-    // Convert audio to base64
+    // Convert audio to base64 properly
     log("🔄 Converting to base64...");
     const arrayBuffer = await audioBlob.arrayBuffer();
-    const base64Audio = btoa(
-      String.fromCharCode(...new Uint8Array(arrayBuffer))
-    );
+
+    // Use proper base64 encoding for binary data
+    const base64Audio = arrayBufferToBase64(arrayBuffer);
     log("✅ Base64 conversion complete");
 
     log("📤 Sending to server...");
@@ -183,4 +221,14 @@ async function processAudio(audioBlob) {
     log("❌ Error processing audio: " + e.message);
     console.error("Full error:", e);
   }
+}
+
+// Proper base64 encoding for binary data
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }

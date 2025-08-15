@@ -36,7 +36,7 @@ app.get("/test-azure", async (req, res) => {
     // Test 1: Check if we can reach Azure
     console.log("🧪 Test 1: Testing Azure connectivity...");
     const testResponse = await fetch(
-      `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`,
+      `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=lv-LV`,
       {
         method: "POST",
         headers: {
@@ -81,13 +81,113 @@ app.get("/test-azure", async (req, res) => {
     return res.json({
       success: "✅ Azure Speech Service is accessible",
       status: testResponse.status,
-      message: "API key is working, issue might be elsewhere",
+      message: "API key is working, Latvian language should be supported",
+      region: process.env.AZURE_SPEECH_REGION,
+      language: "lv-LV (Latvian)",
     });
   } catch (error) {
     console.error("🧪 Azure test error:", error);
     return res.status(500).json({
       error: "❌ Azure test failed",
       message: error.message,
+    });
+  }
+});
+
+// Health check for Latvian speech recognition
+app.get("/health-latvian", async (req, res) => {
+  try {
+    console.log("🏥 Health check for Latvian speech recognition...");
+
+    // Test TTS with Latvian
+    const ttsResponse = await fetch(
+      `https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
+      {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY,
+          "Content-Type": "application/ssml+xml",
+          "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+        },
+        body: `<speak version='1.0' xml:lang='lv-LV'>
+          <voice xml:lang='lv-LV' xml:gender='Female' name='lv-LV-EveritaNeural'>
+            Sveiki! Es esmu jūsu latviešu valodas palīgs.
+          </voice>
+        </speak>`,
+      }
+    );
+
+    const status = {
+      azure_region: process.env.AZURE_SPEECH_REGION,
+      latvian_tts: ttsResponse.ok ? "✅ Working" : "❌ Failed",
+      tts_status: ttsResponse.status,
+      speech_recognition: "✅ Configured for lv-LV",
+      claude_api: process.env.CLAUDE_API_KEY ? "✅ Configured" : "❌ Missing",
+      overall: "✅ Healthy",
+    };
+
+    if (!ttsResponse.ok) {
+      status.overall = "⚠️ TTS Issues";
+      status.latvian_tts = `❌ Failed (${ttsResponse.status})`;
+    }
+
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({
+      overall: "❌ Unhealthy",
+      error: error.message,
+      azure_region: process.env.AZURE_SPEECH_REGION,
+    });
+  }
+});
+
+// Test transcription endpoint for audio tester
+app.post("/test-transcription", async (req, res) => {
+  try {
+    console.log("🧪 POST /test-transcription called (Audio Tester)");
+    const { audio } = req.body;
+
+    if (!audio) {
+      return res.status(400).json({ error: "No audio provided" });
+    }
+
+    console.log("🧪 Converting test audio to buffer...");
+    const audioBuffer = Buffer.from(audio, "base64");
+    console.log("🧪 Test audio buffer size:", audioBuffer.length);
+
+    if (audioBuffer.length < 1000) {
+      console.log(
+        "🧪 ⚠️ Test audio buffer very small, might be recording issue"
+      );
+    }
+
+    console.log("🧪 Calling Azure Speech Service for test...");
+    const transcription = await getAzureSpeechToText(audioBuffer);
+
+    console.log("🧪 Test transcription result:", transcription);
+
+    if (transcription && !transcription.includes("nevarēju saprast")) {
+      console.log("🧪 ✅ Test transcription successful!");
+      res.json({
+        transcription: transcription,
+        success: true,
+        audioSize: audioBuffer.length,
+      });
+    } else {
+      console.log("🧪 ❌ Test transcription failed");
+      res.json({
+        transcription: null,
+        success: false,
+        audioSize: audioBuffer.length,
+        error: "No speech detected",
+      });
+    }
+  } catch (err) {
+    console.error("🧪 ❌ Error in test-transcription:", err);
+    res.status(500).json({
+      error: "Test transcription failed",
+      details: err.message,
+      success: false,
     });
   }
 });
@@ -106,9 +206,17 @@ app.post("/process-audio", async (req, res) => {
     const audioBuffer = Buffer.from(audio, "base64");
     console.log("🔄 Audio buffer size:", audioBuffer.length);
 
+    if (audioBuffer.length < 1000) {
+      console.log("⚠️ Audio buffer very small, might be recording issue");
+    }
+
     console.log("🔄 Calling getAzureSpeechToText...");
     const userMessage = await getAzureSpeechToText(audioBuffer);
     console.log("🎤 User said:", userMessage);
+
+    if (userMessage.includes("nevarēju saprast")) {
+      console.log("⚠️ Speech recognition failed, user message is fallback");
+    }
 
     console.log("🔄 Calling getClaudeResponse...");
     const claudeResponse = await getClaudeResponse(userMessage);
@@ -117,6 +225,16 @@ app.post("/process-audio", async (req, res) => {
     console.log("🔄 Calling getAzureSpeechVoice...");
     const azureAudio = await getAzureSpeechVoice(claudeResponse);
     console.log("🔊 Azure audio generated");
+
+    if (!azureAudio) {
+      console.log("❌ TTS failed, sending text-only response");
+      return res.json({
+        text: claudeResponse,
+        audio: null,
+        userMessage: userMessage,
+        error: "TTS generation failed",
+      });
+    }
 
     console.log("🔄 Sending response...");
     res.json({
@@ -127,7 +245,9 @@ app.post("/process-audio", async (req, res) => {
     console.log("✅ Response sent successfully");
   } catch (err) {
     console.error("❌ Error in /process-audio:", err);
-    res.status(500).json({ error: "Failed to process audio" });
+    res
+      .status(500)
+      .json({ error: "Failed to process audio", details: err.message });
   }
 });
 
@@ -172,7 +292,7 @@ async function getAzureSpeechVoice(text) {
   console.log("🔍 getAzureSpeechVoice called with:", text);
   try {
     const response = await fetch(
-      `https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`,
+      `https://${process.env.AZURE_SPEECH_REGION}.api.cognitive.microsoft.com/speechsynthesis/synthesize`,
       {
         method: "POST",
         headers: {
@@ -183,7 +303,7 @@ async function getAzureSpeechVoice(text) {
         },
         body: `<speak version='1.0' xml:lang='lv-LV'>
           <voice xml:lang='lv-LV' xml:gender='Female' name='lv-LV-EveritaNeural'>
-            <prosody rate="+10%">
+            <prosody rate="+5%" pitch="+0%" volume="+0%">
               ${text}
             </prosody>
           </voice>
@@ -211,51 +331,14 @@ async function getAzureSpeechToText(audioBuffer) {
     audioBuffer.length
   );
 
-  // First, try English to see if Azure STT works at all
-  console.log("🧪 Testing with English first...");
-  try {
-    const englishResponse = await fetch(
-      `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed&profanity=raw&punctuation=true`,
-      {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY,
-          "Content-Type": "audio/webm;codecs=opus",
-          Accept: "application/json",
-        },
-        body: audioBuffer,
-      }
-    );
+  // Try Latvian first (primary language) with optimized settings
+  console.log("🎯 Trying Latvian speech recognition...");
 
-    if (englishResponse.ok) {
-      const englishData = await englishResponse.json();
-      console.log("🧪 English test response:", englishData);
-
-      if (
-        englishData.RecognitionStatus === "Success" &&
-        englishData.DisplayText &&
-        englishData.DisplayText.trim() !== ""
-      ) {
-        console.log("🧪 English speech recognized:", englishData.DisplayText);
-        console.log(
-          "⚠️ Azure STT works with English but not Latvian - language model issue"
-        );
-      } else {
-        console.log(
-          "🧪 English also failed - audio quality or Azure configuration issue"
-        );
-      }
-    }
-  } catch (error) {
-    console.log("🧪 English test failed:", error.message);
-  }
-
-  // Now try Latvian with different content types
   const contentTypes = [
-    "audio/wav",
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/raw",
+    "audio/webm;codecs=opus", // Best for Azure, matches frontend
+    "audio/webm", // Good fallback
+    "audio/wav", // Less compatible but worth trying
+    "audio/raw", // Last resort
   ];
 
   for (const contentType of contentTypes) {
@@ -263,7 +346,7 @@ async function getAzureSpeechToText(audioBuffer) {
       console.log(`🎯 Trying ${contentType} for Latvian...`);
 
       const response = await fetch(
-        `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=lv-LV&format=detailed&profanity=raw&punctuation=true`,
+        `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=lv-LV&format=detailed&profanity=raw&punctuation=true&diarizationEnabled=false`,
         {
           method: "POST",
           headers: {
@@ -288,7 +371,7 @@ async function getAzureSpeechToText(audioBuffer) {
         data.DisplayText &&
         data.DisplayText.trim() !== ""
       ) {
-        console.log("✅ Speech recognized:", data.DisplayText);
+        console.log("✅ Latvian speech recognized:", data.DisplayText);
         return data.DisplayText;
       } else if (
         data.RecognitionStatus === "Success" &&
@@ -297,8 +380,23 @@ async function getAzureSpeechToText(audioBuffer) {
         data.NBest[0].Display &&
         data.NBest[0].Display.trim() !== ""
       ) {
-        console.log("✅ Speech recognized (NBest):", data.NBest[0].Display);
+        console.log(
+          "✅ Latvian speech recognized (NBest):",
+          data.NBest[0].Display
+        );
         return data.NBest[0].Display;
+      } else if (
+        data.RecognitionStatus === "Success" &&
+        data.NBest &&
+        data.NBest.length > 0 &&
+        data.NBest[0].Lexical &&
+        data.NBest[0].Lexical.trim() !== ""
+      ) {
+        console.log(
+          "✅ Latvian speech recognized (Lexical):",
+          data.NBest[0].Lexical
+        );
+        return data.NBest[0].Lexical;
       } else {
         console.log(`⚠️ ${contentType} succeeded but no speech detected`);
         continue;
@@ -309,7 +407,40 @@ async function getAzureSpeechToText(audioBuffer) {
     }
   }
 
-  console.log("❌ All content types failed");
+  // Fallback to English if Latvian fails
+  console.log("🔄 Latvian failed, trying English as fallback...");
+  try {
+    const englishResponse = await fetch(
+      `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed&profanity=raw&punctuation=true`,
+      {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY,
+          "Content-Type": "audio/webm;codecs=opus",
+          Accept: "application/json",
+        },
+        body: audioBuffer,
+      }
+    );
+
+    if (englishResponse.ok) {
+      const englishData = await englishResponse.json();
+      console.log("🧪 English fallback response:", englishData);
+
+      if (
+        englishData.RecognitionStatus === "Success" &&
+        englishData.DisplayText &&
+        englishData.DisplayText.trim() !== ""
+      ) {
+        console.log("✅ English speech recognized:", englishData.DisplayText);
+        return englishData.DisplayText;
+      }
+    }
+  } catch (error) {
+    console.log("🧪 English fallback failed:", error.message);
+  }
+
+  console.log("❌ All language attempts failed");
   return "Es nevarēju saprast, ko jūs teicāt. Lūdzu, mēģiniet vēlreiz.";
 }
 
